@@ -10,6 +10,8 @@ PCS 层 RS-FEC 的实现与验证工程（**不属于 SerDes 内容**）。
 reference/
   FEC原理与RTL实现.md   codex 整理的推导文档（数学链条 + RTL 路线）
   算法规格.md            定稿算法：8 步 + Chien + Forney + 失败判据（RTL 口径卡）
+  questions_pcs.md      PCS 问题与结论（问题追踪、待确认、问答索引）
+  open_item.md          待确认 / 待办事项清单
 code/
   common.py             共用底层：GF(2^μ) 域表、码参数、g(x)、TX 编码、伴随式
   spec_impl.py          ① 规格版 —— 完全按定稿算法编写，结构贴近 RTL
