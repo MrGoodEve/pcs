@@ -15,15 +15,18 @@
 
 Chien（位置）
     根形式 Λ̃_j = Λ_{L−j}，遍历 x = α^d（d = 0..n−1）⇒ 命中的 d 对应位置 p = n−1−d
+    失败判据①：BM 的递推长度 L > t ⇒ fail（数组越界护栏 + 提前中止，不跑 Chien/Forney）
     失败判据②：根数 < deg Λ ⇒ fail
 
 Forney（幅值，FCR=1 ⇒ 尺度因子为 1）
     Ω[j] = Σ_{i≤j} S_{j+1−i} ⊗ λ_i        （S_k = 0 当 k ≤ 0；j = 0..2t−1）
     λ′(x) = Σ_{j 奇} λ_j x^{j−1}          （char 2 的形式导数：奇数下标右移一位）
     E_i   = Ω(X_i^{−1}) / λ′(X_i^{−1})
-    失败判据③：∃ j ≥ L 使 Ω[j] ≠ 0 ⇒ fail
+    失败判据③：∃ j ≥ deg Λ 使 Ω[j] ≠ 0 ⇒ fail
 
-失败判据④：纠正后重算 S ≠ 0 ⇒ fail
+判据④（纠正后重算 S）**已删**：与 ③ 数学等价（0/14500 反例），却要重扫整块 n 拍（见 reference/算法规格.md §4）。
+① 用**递推长度 L**（数组深度/越界 + 提前中止）；②③ 用 **deg Λ**（判多项式性质）。
+两者不可互替：C 从不裁剪高位 0，实测会出现 deg Λ < L（如 rev ν=3 seed 424：L=2、deg Λ=1）。
 
 RTL 对应
     · B / C 是定长寄存器数组（B: t 级，C: t+1 级）；此实现不裁剪，保持位置
@@ -150,36 +153,43 @@ def forney(gf, Om, dv, ds):
 # 串联 + 失败判据
 # -----------------------------------------------------------------------------
 def decode(gf, cfg, rw):
-    """返回 dict：status ∈ {OK, FAIL②, FAIL③, FAIL④} 及全部中间量。"""
+    """返回 dict：status ∈ {OK, FAIL①, FAIL②, FAIL③} 及全部中间量。
+
+    判据集合（定稿）：① L ≤ t ② 根数 < deg Λ ③ ∃ j ≥ deg Λ 使 Ω[j] ≠ 0。
+    ④（纠正后重算 S）已删 —— 与 ③ 等价且要重扫整块；端到端自检留给参考版/系统级 CRC。
+    """
+    t = cfg["two_t"] // 2
     S = rx_syndrome(gf, cfg, rw)
     Lam, rows = bm(gf, cfg, S)
+
+    # 判据①：BM 递推长度 L ≤ t（写高次系数前的越界护栏；这里当提前中止用，省掉 Chien/Forney）
+    L_rec = rows[-1]["L_out"]
+    if L_rec > t:
+        return dict(S=S, Lam=Lam, rows=rows, ds=[], L=deg(Lam), L_rec=L_rec, status="FAIL①")
+
     ds, L = chien(gf, cfg, Lam)
-    out = dict(S=S, Lam=Lam, rows=rows, ds=ds, L=L)
+    out = dict(S=S, Lam=Lam, rows=rows, ds=ds, L=L, L_rec=L_rec)
 
     # 判据②：根数 < deg Λ
     if len(ds) < L:
-        out["status"] = "FAIL②"
+        out.update(pos=[pos_of(cfg, d) for d in ds], status="FAIL②")
         return out
 
-    # Ω + 判据③：∃ j ≥ L 使 Ω[j] ≠ 0
+    # Ω + 判据③：∃ j ≥ deg Λ 使 Ω[j] ≠ 0
     Om = omega(gf, cfg, Lam, S)
     out["Omega"] = Om
     over = [j for j in range(L, len(Om)) if Om[j] != 0]
+    pos = [pos_of(cfg, d) for d in ds]
     if over:
-        out.update(status="FAIL③", over=over)
+        out.update(pos=pos, status="FAIL③", over=over)
         return out
 
-    # Forney
+    # Forney + 纠正（④ 已删：不再重算 S）
     dv = lam_deriv(Lam)
     fs = forney(gf, Om, dv, ds)
     Es = [f[4] for f in fs]
     fixed = list(rw)
-    pos = [pos_of(cfg, d) for d in ds]
     for p, e in zip(pos, Es):
         fixed[p] ^= e
-
-    # 判据④：纠正后重算 S
-    S2 = rx_syndrome(gf, cfg, fixed)
-    out.update(dv=dv, fs=fs, Es=Es, pos=pos, fixed=fixed, S2=S2)
-    out["status"] = "OK" if all(v == 0 for v in S2) else "FAIL④"
+    out.update(dv=dv, fs=fs, Es=Es, pos=pos, fixed=fixed, status="OK")
     return out

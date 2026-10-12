@@ -84,8 +84,13 @@ def run_one(cfgname, nu, seed, errs=None, trace=False, quiet=False):
                 print("   N=%-3d L:%d→%-2d  δ=%s   %s"
                       % (r["N"], r["L_in"], r["L_out"], gf.v(r["delta"]), tail))
                 print("          Λout = %s" % gf.arr(r["C_out"]))
-        print("Chien（根形式）= d %s ⇒ 位置 %s   [根数 %d vs deg Λ %d]"
-              % (so["ds"], so.get("pos", []), len(so["ds"]), so["L"]))
+        if so["status"] == "FAIL①":
+            print("判据①：BM 递推长度 L = %s > t = %d ⇒ decoder failure（提前中止，不跑 Chien/Forney）✓"
+                  % (so.get("L_rec"), t))
+            print("      Λ = %s   deg Λ = %d" % (gf.arr(so["Lam"]), so["L"]))
+        else:
+            print("Chien（根形式）= d %s ⇒ 位置 %s   [根数 %d vs deg Λ %d]"
+                  % (so["ds"], so.get("pos", []), len(so["ds"]), so["L"]))
         if so["status"] == "FAIL②":
             print("判据②：根数 < deg Λ ⇒ decoder failure（不输出数据）✓")
         elif so["status"] == "FAIL③":
@@ -118,21 +123,25 @@ def run_one(cfgname, nu, seed, errs=None, trace=False, quiet=False):
     if not ok_poly and not quiet:
         print("   （首个不一致下标 %d：spec=%s  ref=%s）" % (firstdiff, gf.v(A[firstdiff]), gf.v(B[firstdiff])))
 
-    checks["位置集合"] = set(so.get("pos", [])) == set(ro.get("pos", []))
-    checks["判据状态"] = so["status"] == ro["status"]
+    so_fail = so["status"].startswith("FAIL")
+    ro_fail = ro["status"].startswith("FAIL")
+    checks["判定(成功/失败)"] = so_fail == ro_fail
     if so["status"] == "OK" and ro["status"] == "OK":
+        checks["位置集合"] = set(so["pos"]) == set(ro["pos"])
         m1 = dict(zip(so["pos"], so["Es"]))
         m2 = dict(zip(ro["pos"], ro["Es"]))
         checks["幅值"] = m1 == m2
         checks["纠正后码字"] = so["fixed"] == ro["fixed"]
         checks["与注入真值"] = (so["fixed"] == cw) and (m1 == true_map)
     else:
+        checks["位置集合"] = None
         checks["幅值"] = None
         checks["纠正后码字"] = None
         checks["与注入真值"] = None
 
     # 记录实际状态（"_" 前缀 = 元信息，不参与一致性判定）
     checks["_status"] = so["status"]
+    checks["_labels"] = "%s / %s" % (so["status"], ro["status"])
 
     if not quiet:
         print()
@@ -142,6 +151,10 @@ def run_one(cfgname, nu, seed, errs=None, trace=False, quiet=False):
                 continue
             print("  %-12s : %s" % (k, "一致 ✓" if v else ("—（未走到这步）" if v is None else "★不一致 ✗")))
         print("  %-12s : %s" % ("spec 状态", so["status"]))
+        print("  %-12s : %s" % ("ref 状态", ro["status"]))
+        if so["status"] != ro["status"] and so_fail and ro_fail:
+            print("  注：两实现判定一致（都是解码失败），只是判据标签不同 —— 规格版按 ①/②/③ 提前返回，"
+                  "参考版只有 ②/④。")
         agree = agree_only(checks)
         print()
         print("  ⇒ %s" % ("两实现完全一致 ✓" if agree else "★存在分歧，需要查！"))
